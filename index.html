@@ -17,7 +17,6 @@
     --sea: #16697a;        /* interactive */
     --sea-soft: #e3eef1;
     --bad: #a4402e;
-    --ok: #2e7d4f;
     --radius: 12px;
   }
   * { box-sizing: border-box; }
@@ -36,15 +35,16 @@
     background: var(--ink); color: #f2efe8;
     padding: calc(env(safe-area-inset-top) + 10px) 14px 0;
   }
-  .masthead { display: flex; align-items: baseline; justify-content: space-between; }
+  .masthead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .masthead h1 {
     font-family: "Zilla Slab", serif; font-weight: 700;
-    font-size: 19px; margin: 0; letter-spacing: .02em;
+    font-size: 19px; margin: 0; letter-spacing: .02em; flex: 1;
   }
-  .who {
+  .pill {
     background: none; border: 1px solid rgba(255,255,255,.35); color: inherit;
     border-radius: 999px; padding: 3px 12px; font-size: 13px; font-weight: 600;
   }
+  .pill.on { background: var(--brass); border-color: var(--brass); color: #fff; }
   nav { display: flex; gap: 4px; margin-top: 8px; }
   nav button {
     flex: 1; background: none; border: none; color: rgba(242,239,232,.65);
@@ -58,7 +58,7 @@
   /* ---------- Status chip ---------- */
   #status {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
-    z-index: 50; background: var(--ink); color: #fff; border-radius: 999px;
+    z-index: 90; background: var(--ink); color: #fff; border-radius: 999px;
     padding: 6px 16px; font-size: 13px; font-weight: 600;
     opacity: 0; transition: opacity .25s; pointer-events: none;
   }
@@ -82,19 +82,27 @@
   }
   .listing-nav button:disabled { opacity: .35; cursor: default; }
 
-  /* The pinned block: address plate + photo rail stay while ratings scroll */
   .pin {
-    position: sticky;
-    top: 92px;               /* header height; JS refines this */
-    z-index: 20;
-    background: var(--paper);
-    padding-bottom: 6px;
+    position: sticky; top: 92px; z-index: 20;
+    background: var(--paper); padding-bottom: 6px;
     box-shadow: 0 8px 10px -10px rgba(34,48,60,.35);
   }
   .plate { padding: 6px 14px 8px; }
+  .plate .addr-row { display: flex; align-items: flex-start; gap: 10px; }
   .plate .addr {
     font-family: "Zilla Slab", serif; font-weight: 600;
-    font-size: 21px; line-height: 1.15;
+    font-size: 21px; line-height: 1.15; flex: 1;
+  }
+  .star-btn {
+    flex: none; border: 1px solid var(--line); background: var(--card);
+    border-radius: 8px; padding: 4px 12px; font-size: 15px; font-weight: 700;
+    color: var(--ink-soft);
+  }
+  .star-btn.on { color: var(--brass); border-color: var(--brass); }
+  .badge {
+    display: inline-block; background: var(--sea-soft); color: var(--sea);
+    border-radius: 6px; padding: 1px 8px; font-size: 11.5px; font-weight: 700;
+    vertical-align: 2px; margin-left: 6px;
   }
   .plate .sub {
     display: flex; flex-wrap: wrap; gap: 4px 14px;
@@ -110,12 +118,41 @@
   .rail img {
     height: 210px; border-radius: 8px; scroll-snap-align: start;
     background: #d8d4ca; flex: none; max-width: 88vw; object-fit: cover;
+    cursor: zoom-in;
   }
   @media (min-width: 640px) { .rail img { height: 260px; } }
   .rail .none {
     height: 210px; flex: none; width: 100%; border-radius: 8px;
     background: #e7e3da; color: var(--ink-soft);
     display: flex; align-items: center; justify-content: center; font-size: 14px;
+  }
+
+  /* ---------- Lightbox ---------- */
+  #lightbox {
+    position: fixed; inset: 0; z-index: 200; background: rgba(12,18,23,.96);
+    display: flex; align-items: center; justify-content: center;
+    touch-action: manipulation;
+  }
+  #lightbox img {
+    max-width: 100vw; max-height: 100vh; object-fit: contain;
+    user-select: none; -webkit-user-drag: none;
+  }
+  #lightbox .zone {
+    position: absolute; top: 0; bottom: 0; width: 40%;
+    background: none; border: none;
+  }
+  #lightbox .zone.left { left: 0; }
+  #lightbox .zone.right { right: 0; }
+  #lightbox .close {
+    position: absolute; top: calc(env(safe-area-inset-top) + 10px); right: 12px;
+    width: 44px; height: 44px; border-radius: 999px; border: none;
+    background: rgba(255,255,255,.15); color: #fff; font-size: 22px; font-weight: 700;
+  }
+  #lightbox .count {
+    position: absolute; bottom: calc(env(safe-area-inset-bottom) + 12px);
+    left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,.85); font-size: 13px; font-weight: 600;
+    pointer-events: none;
   }
 
   /* ---------- Ratings ---------- */
@@ -140,6 +177,11 @@
     width: 52px; font: inherit; padding: 3px 6px; text-align: center;
     border: 1px solid var(--line); border-radius: 6px; background: var(--paper);
   }
+  .crit-head .del {
+    border: none; background: none; color: var(--ink-soft);
+    font-size: 15px; padding: 0 2px; line-height: 1;
+  }
+  .crit-head .del:hover { color: var(--bad); }
   .seg { display: flex; gap: 6px; margin-top: 8px; }
   .seg button {
     flex: 1; height: 42px; border-radius: 8px;
@@ -175,21 +217,27 @@
     background: var(--paper);
   }
 
-  /* ---------- Rankings ---------- */
+  /* ---------- Rankings & Contenders ---------- */
   .rank-controls {
-    display: flex; gap: 8px; padding: 14px 14px 0; flex-wrap: wrap;
+    display: flex; gap: 8px; padding: 14px 14px 0; flex-wrap: wrap; align-items: center;
   }
   .rank-controls select {
     flex: 1; min-width: 140px; font: inherit; font-weight: 600;
     padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px;
     background: var(--card); color: var(--ink);
   }
+  .toggle {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 13px; font-weight: 600; color: var(--ink-soft);
+  }
+  .toggle input { width: 18px; height: 18px; accent-color: var(--sea); }
   .rank-list { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
   .rank-row {
     display: flex; align-items: center; gap: 12px; text-align: left;
     background: var(--card); border: 1px solid var(--line);
     border-radius: var(--radius); padding: 10px 12px; width: 100%;
   }
+  .rank-row.ours { border-style: dashed; border-color: var(--brass); }
   .rank-row .pos {
     font-family: "Zilla Slab", serif; font-weight: 700; font-size: 18px;
     color: var(--ink-soft); width: 26px; flex: none; text-align: center;
@@ -204,11 +252,19 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .rank-row .mid .b { font-size: 12.5px; color: var(--ink-soft); }
+  .rank-row .row-star {
+    flex: none; border: none; background: none; font-size: 21px;
+    color: var(--line); padding: 4px;
+  }
+  .rank-row .row-star.on { color: var(--brass); }
   .rank-row .score {
     font-family: "Zilla Slab", serif; font-weight: 700; font-size: 21px;
     color: var(--brass); flex: none;
   }
-  .rank-row .score small { font-size: 11px; color: var(--ink-soft); display: block; text-align: right; font-family: "Public Sans", sans-serif; font-weight: 600;}
+  .rank-row .score small {
+    font-size: 11px; color: var(--ink-soft); display: block; text-align: right;
+    font-family: "Public Sans", sans-serif; font-weight: 600;
+  }
 
   /* ---------- Overlays ---------- */
   .overlay {
@@ -243,17 +299,20 @@
 <header id="header">
   <div class="masthead">
     <h1>House Hunt</h1>
-    <button class="who" id="whoBtn" title="Switch person">…</button>
+    <button class="pill" id="blindBtn" title="Hide the other person's opinions">Blind</button>
+    <button class="pill" id="whoBtn" title="Switch person">…</button>
   </div>
   <nav>
     <button id="tabBrowse" class="active">Browse</button>
     <button id="tabRank">Rankings</button>
+    <button id="tabCont">Contenders</button>
   </nav>
 </header>
 
 <main>
   <div id="viewBrowse"><div class="loading">Loading listings…</div></div>
   <div id="viewRank" class="hidden"></div>
+  <div id="viewCont" class="hidden"></div>
 </main>
 
 <div id="status"></div>
@@ -288,11 +347,15 @@ const log = (...a) => console.log("[HouseHunt]", ...a);
 const state = {
   secret: localStorage.getItem("hh_secret") || "",
   person: localStorage.getItem("hh_person") || "",
-  data: null,          // { criteria:[{name,weight}], listings:[{spec,ratings,note}] }
-  current: 0,          // index into state.data.listings
+  blind: localStorage.getItem("hh_blind") === "1",
+  showOurs: localStorage.getItem("hh_ours") !== "0",   // default on
+  data: null,
+  current: 0,
   tab: "browse",
-  rankBy: "Combined",  // "Combined" | person | "crit:<name>"
+  rankBy: "Combined",
 };
+
+const partnerOf = (p) => PEOPLE.find((x) => x !== p);
 
 /* ============================ API plumbing ============================= */
 async function apiGet(action) {
@@ -323,7 +386,6 @@ function flash(msg, isErr) {
   statusTimer = setTimeout(() => { el.className = ""; }, isErr ? 4000 : 1400);
 }
 
-/** Optimistic write: apply locally, POST, flash result. */
 function save(payload, label) {
   apiPost(payload)
     .then(() => flash(label + " saved"))
@@ -331,14 +393,16 @@ function save(payload, label) {
 }
 
 /* ============================= Scoring ================================= */
+/** Weighted score using that person's OWN weights. */
 function personScore(listing, person) {
   const r = listing.ratings[person] || {};
   let num = 0, den = 0;
   for (const c of state.data.criteria) {
     const v = Number(r[c.name]);
+    const w = c.weights[person] || 0;
     if (!isNaN(v) && r[c.name] !== "" && r[c.name] != null) {
-      num += v * c.weight;
-      den += c.weight;
+      num += v * w;
+      den += w;
     }
   }
   return den > 0 ? num / den : null;
@@ -349,8 +413,9 @@ function combinedScore(listing) {
   return parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
 }
 
-function critScore(listing, crit) {
-  const parts = PEOPLE.map((p) => Number((listing.ratings[p] || {})[crit]))
+/** Average raw rating on one criterion across the given people. */
+function critScore(listing, crit, people) {
+  const parts = people.map((p) => Number((listing.ratings[p] || {})[crit]))
     .filter((v) => !isNaN(v) && v > 0);
   return parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
 }
@@ -363,14 +428,60 @@ function photoList(spec) {
   if (raw) return raw.split("|").filter(Boolean);
   return spec["Thumbnail"] ? [spec["Thumbnail"]] : [];
 }
-/** Ask Compass for a sane rendition; fall back to original on error. */
 function sized(url, wh) {
   return url.replace(/origin\.jpg$/, wh + ".jpg");
 }
-function imgTag(url, wh, cls) {
+function imgTag(url, wh, extra) {
   const small = sized(url, wh);
-  return `<img loading="lazy" src="${small}" ${cls ? `class="${cls}"` : ""}
+  return `<img loading="lazy" src="${small}" ${extra || ""}
     onerror="if(this.src!=='${url}'){this.src='${url}'}" alt="">`;
+}
+
+/* ============================= Lightbox ================================ */
+const lightbox = { photos: [], at: 0 };
+
+function openLightbox(photos, at) {
+  lightbox.photos = photos;
+  lightbox.at = at;
+  const el = document.createElement("div");
+  el.id = "lightbox";
+  el.innerHTML = `
+    <img id="lbImg" src="">
+    <button class="zone left" aria-label="Previous photo"></button>
+    <button class="zone right" aria-label="Next photo"></button>
+    <button class="close" aria-label="Close">×</button>
+    <div class="count" id="lbCount"></div>`;
+  document.body.appendChild(el);
+  el.querySelector(".zone.left").onclick = () => stepLightbox(-1);
+  el.querySelector(".zone.right").onclick = () => stepLightbox(1);
+  el.querySelector(".close").onclick = closeLightbox;
+  document.addEventListener("keydown", lightboxKeys);
+  showLightbox();
+}
+
+function showLightbox() {
+  const url = lightbox.photos[lightbox.at];
+  document.getElementById("lbImg").src = url;   // full-res original
+  document.getElementById("lbCount").textContent =
+    (lightbox.at + 1) + " / " + lightbox.photos.length;
+}
+
+function stepLightbox(d) {
+  const n = lightbox.photos.length;
+  lightbox.at = (lightbox.at + d + n) % n;
+  showLightbox();
+}
+
+function closeLightbox() {
+  const el = document.getElementById("lightbox");
+  if (el) el.remove();
+  document.removeEventListener("keydown", lightboxKeys);
+}
+
+function lightboxKeys(e) {
+  if (e.key === "Escape") closeLightbox();
+  if (e.key === "ArrowLeft") stepLightbox(-1);
+  if (e.key === "ArrowRight") stepLightbox(1);
 }
 
 /* ============================ Browse view ============================== */
@@ -378,6 +489,8 @@ function money(v) {
   const n = Number(v);
   return isNaN(n) || v === "" ? "" : "$" + n.toLocaleString("en-US");
 }
+
+function starLabel(on) { return on ? "★ Contender" : "☆ Contender"; }
 
 function renderBrowse() {
   const root = document.getElementById("viewBrowse");
@@ -390,15 +503,17 @@ function renderBrowse() {
   const item = L[state.current];
   const s = item.spec;
   const me = state.person;
-  const partner = PEOPLE.find((p) => p !== me);
+  const partner = partnerOf(me);
   const photos = photoList(s);
+  const starred = item.contenders.includes(me);
 
   const opts = L.map((l, i) =>
-    `<option value="${i}" ${i === state.current ? "selected" : ""}>${l.spec["Address"]}</option>`).join("");
+    `<option value="${i}" ${i === state.current ? "selected" : ""}>${esc(l.spec["Address"])}${l.manual ? " (our house)" : ""}</option>`).join("");
 
   const critRows = state.data.criteria.map((c) => {
     const mine = (item.ratings[me] || {})[c.name];
     const theirs = (item.ratings[partner] || {})[c.name];
+    const myWt = c.weights[me];
     const segs = [1, 2, 3, 4, 5].map((v) =>
       `<button data-crit="${esc(c.name)}" data-val="${v}"
         class="${Number(mine) === v ? "on" : ""}">${v}</button>`).join("");
@@ -406,8 +521,9 @@ function renderBrowse() {
       <div class="crit">
         <div class="crit-head">
           <span class="name">${esc(c.name)}</span>
-          <span class="partner">${esc(partner)}: ${theirs != null && theirs !== "" ? theirs : "–"}</span>
-          <label class="wt">wt <input type="number" step="0.5" min="0" value="${c.weight}" data-wcrit="${esc(c.name)}"></label>
+          ${state.blind ? "" : `<span class="partner">${esc(partner)}: ${theirs != null && theirs !== "" ? theirs : "–"} · wt ${c.weights[partner]}</span>`}
+          <label class="wt">my wt <input type="number" step="0.5" min="0" value="${myWt}" data-wcrit="${esc(c.name)}"></label>
+          <button class="del" data-dcrit="${esc(c.name)}" title="Delete this category">🗑</button>
         </div>
         <div class="seg">${segs}
           <button class="clear" data-crit="${esc(c.name)}" data-val="" title="Clear">×</button>
@@ -423,16 +539,19 @@ function renderBrowse() {
     </div>
     <div class="pin" id="pin">
       <div class="plate">
-        <div class="addr">${esc(s["Address"])}</div>
+        <div class="addr-row">
+          <div class="addr">${esc(s["Address"])}${item.manual ? `<span class="badge">Our house</span>` : ""}</div>
+          <button class="star-btn ${starred ? "on" : ""}" id="starBtn">${starLabel(starred)}</button>
+        </div>
         <div class="sub">
           <span class="price">${money(s["Price"])}</span>
-          <span>${s["Beds"]} bd · ${s["Baths"]} ba · ${Number(s["SqFt"]).toLocaleString()} sqft</span>
+          <span>${s["Beds"]} bd · ${s["Baths"]} ba · ${Number(s["SqFt"]) ? Number(s["SqFt"]).toLocaleString() + " sqft" : ""}</span>
           <span>${esc(s["City"])}</span>
           ${s["Compass URL"] ? `<a href="${s["Compass URL"]}" target="_blank" rel="noopener">Compass ↗</a>` : ""}
         </div>
       </div>
-      <div class="rail">
-        ${photos.length ? photos.map((u) => imgTag(u, "900x600")).join("") : `<div class="none">No photos captured yet</div>`}
+      <div class="rail" id="rail">
+        ${photos.length ? photos.map((u, i) => imgTag(u, "900x600", `data-pidx="${i}"`)).join("") : `<div class="none">No photos captured yet</div>`}
       </div>
     </div>
 
@@ -452,11 +571,11 @@ function renderBrowse() {
       <textarea id="note" placeholder="What stood out about this one?">${esc(item.note || "")}</textarea>
     </section>`;
 
-  wireBrowse(item);
+  wireBrowse(item, photos);
   requestAnimationFrame(setPinOffset);
 }
 
-function wireBrowse(item) {
+function wireBrowse(item, photos) {
   const id = String(item.spec[KEY]);
   const me = state.person;
 
@@ -464,7 +583,18 @@ function wireBrowse(item) {
   document.getElementById("next").onclick = () => { state.current++; renderBrowse(); };
   document.getElementById("jump").onchange = (e) => { state.current = Number(e.target.value); renderBrowse(); };
 
-  // Rating segments (and clear buttons)
+  // Fullscreen viewer
+  document.querySelectorAll("#rail img").forEach((img) => {
+    img.onclick = () => openLightbox(photos, Number(img.dataset.pidx));
+  });
+
+  // Contender star
+  document.getElementById("starBtn").onclick = () => {
+    toggleContender(item);
+    renderBrowse();
+  };
+
+  // Ratings
   document.querySelectorAll(".seg button").forEach((b) => {
     b.onclick = () => {
       const crit = b.dataset.crit;
@@ -476,14 +606,30 @@ function wireBrowse(item) {
     };
   });
 
-  // Weights (shared) — save on change
+  // My weight
   document.querySelectorAll("input[data-wcrit]").forEach((inp) => {
     inp.onchange = () => {
       const crit = inp.dataset.wcrit;
       const w = Number(inp.value) || 0;
       const c = state.data.criteria.find((x) => x.name === crit);
-      if (c) c.weight = w;
-      save({ action: "setWeight", criterion: crit, weight: w }, "Weight");
+      if (c) c.weights[me] = w;
+      save({ action: "setWeight", criterion: crit, person: me, weight: w }, "Weight");
+      renderBrowse();
+    };
+  });
+
+  // Delete criterion (cascades to all ratings under it, both people)
+  document.querySelectorAll("button[data-dcrit]").forEach((b) => {
+    b.onclick = () => {
+      const crit = b.dataset.dcrit;
+      const sure = confirm(
+        `Delete "${crit}" for everyone?\n\nThis removes the category AND every rating you and ${partnerOf(me)} have given under it, on all houses. This can't be undone.`);
+      if (!sure) return;
+      state.data.criteria = state.data.criteria.filter((c) => c.name !== crit);
+      state.data.listings.forEach((l) => {
+        PEOPLE.forEach((p) => { if (l.ratings[p]) delete l.ratings[p][crit]; });
+      });
+      save({ action: "deleteCriterion", criterion: crit }, "Category deletion");
       renderBrowse();
     };
   });
@@ -501,7 +647,9 @@ function wireBrowse(item) {
     if (state.data.criteria.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
       return flash("That category already exists", true);
     }
-    state.data.criteria.push({ name: name, weight: wt });
+    const weights = {};
+    PEOPLE.forEach((p) => { weights[p] = wt; });
+    state.data.criteria.push({ name: name, weights: weights });
     save({ action: "addCriterion", criterion: name, weight: wt }, "Category");
     renderBrowse();
   };
@@ -516,7 +664,15 @@ function wireBrowse(item) {
   };
 }
 
-/** The pinned photo block sits directly under the sticky header. */
+function toggleContender(item) {
+  const me = state.person;
+  const on = !item.contenders.includes(me);
+  if (on) item.contenders.push(me);
+  else item.contenders = item.contenders.filter((p) => p !== me);
+  save({ action: "setContender", listingId: String(item.spec[KEY]), person: me, on: on },
+    on ? "Contender" : "Contender removal");
+}
+
 function setPinOffset() {
   const pin = document.getElementById("pin");
   if (pin) pin.style.top = document.getElementById("header").offsetHeight + "px";
@@ -524,67 +680,146 @@ function setPinOffset() {
 window.addEventListener("resize", setPinOffset);
 
 /* ============================ Rankings view ============================ */
+function rankRow(x, i, label) {
+  const s = x.l.spec;
+  const thumb = photoList(s)[0];
+  const starred = x.l.contenders.includes(state.person);
+  const idx = state.data.listings.indexOf(x.l);
+  return `
+    <button class="rank-row ${x.l.manual ? "ours" : ""}" data-idx="${idx}">
+      <span class="pos">${i + 1}</span>
+      ${thumb ? imgTag(thumb, "300x200") : `<img alt="">`}
+      <span class="mid">
+        <span class="a">${esc(s["Address"])}${x.l.manual ? `<span class="badge">Our house</span>` : ""}</span>
+        <span class="b">${money(s["Price"])} ${s["Beds"] ? `· ${s["Beds"]}bd ${s["Baths"]}ba` : ""} · ${esc(s["City"])}</span>
+      </span>
+      <span class="row-star ${starred ? "on" : ""}" data-star="${idx}" role="button" title="Contender">★</span>
+      <span class="score">${fmtScore(x.s)}<small>${esc(label)}</small></span>
+    </button>`;
+}
+
+function wireRankRows(root) {
+  root.querySelectorAll(".row-star").forEach((el) => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      toggleContender(state.data.listings[Number(el.dataset.star)]);
+      state.tab === "rank" ? renderRank() : renderCont();
+    };
+  });
+  root.querySelectorAll(".rank-row").forEach((r) => {
+    r.onclick = () => { state.current = Number(r.dataset.idx); setTab("browse"); };
+  });
+}
+
 function renderRank() {
   const root = document.getElementById("viewRank");
-  const L = state.data.listings;
+  const me = state.person;
+
+  // Blind mode: no combined, no partner, and criterion scores use only my ratings.
+  if (state.blind && (state.rankBy === "Combined" || state.rankBy === partnerOf(me))) {
+    state.rankBy = me;
+  }
+  const scorePeople = state.blind ? [me] : PEOPLE;
+
+  let L = state.data.listings;
+  if (!state.showOurs) L = L.filter((l) => !l.manual);
 
   const critOpts = state.data.criteria.map((c) =>
     `<option value="crit:${esc(c.name)}" ${state.rankBy === "crit:" + c.name ? "selected" : ""}>By: ${esc(c.name)}</option>`).join("");
+
+  const overallOpts = state.blind
+    ? `<option value="${me}" selected>Overall: ${me}</option>`
+    : `<option value="Combined" ${state.rankBy === "Combined" ? "selected" : ""}>Overall: Combined</option>
+       <option value="Jake" ${state.rankBy === "Jake" ? "selected" : ""}>Overall: Jake</option>
+       <option value="Kate" ${state.rankBy === "Kate" ? "selected" : ""}>Overall: Kate</option>`;
 
   const scored = L.map((l) => {
     let s;
     if (state.rankBy === "Combined") s = combinedScore(l);
     else if (PEOPLE.includes(state.rankBy)) s = personScore(l, state.rankBy);
-    else s = critScore(l, state.rankBy.slice(5));
+    else s = critScore(l, state.rankBy.slice(5), scorePeople);
     return { l: l, s: s };
   }).sort((a, b) => (b.s ?? -1) - (a.s ?? -1));
 
   const label = state.rankBy.startsWith("crit:") ? state.rankBy.slice(5)
     : state.rankBy === "Combined" ? "combined" : state.rankBy;
 
+  root.innerHTML = `
+    <div class="rank-controls">
+      <select id="rankBy">${overallOpts}${critOpts}</select>
+      <label class="toggle"><input type="checkbox" id="oursToggle" ${state.showOurs ? "checked" : ""}> Our house</label>
+    </div>
+    <div class="rank-list">${scored.map((x, i) => rankRow(x, i, label)).join("") || `<div class="loading">Nothing rated yet.</div>`}</div>`;
+
+  document.getElementById("rankBy").onchange = (e) => { state.rankBy = e.target.value; renderRank(); };
+  document.getElementById("oursToggle").onchange = (e) => {
+    state.showOurs = e.target.checked;
+    localStorage.setItem("hh_ours", state.showOurs ? "1" : "0");
+    renderRank();
+  };
+  wireRankRows(root);
+}
+
+/* =========================== Contenders view =========================== */
+function renderCont() {
+  const root = document.getElementById("viewCont");
+  const me = state.person;
+
+  // Blind mode shows only my own stars; otherwise anyone's.
+  const picked = state.data.listings.filter((l) =>
+    state.blind ? l.contenders.includes(me) : l.contenders.length > 0);
+
+  const scored = picked.map((l) => ({
+    l: l,
+    s: state.blind ? personScore(l, me) : combinedScore(l),
+  })).sort((a, b) => (b.s ?? -1) - (a.s ?? -1));
+
+  const label = state.blind ? me : "combined";
+
   const rows = scored.map((x, i) => {
-    const s = x.l.spec;
-    const thumb = photoList(s)[0];
-    return `
-      <button class="rank-row" data-idx="${L.indexOf(x.l)}">
-        <span class="pos">${i + 1}</span>
-        ${thumb ? imgTag(thumb, "300x200") : `<img alt="">`}
-        <span class="mid">
-          <span class="a">${esc(s["Address"])}</span>
-          <span class="b">${money(s["Price"])} · ${s["Beds"]}bd ${s["Baths"]}ba · ${esc(s["City"])}</span>
-        </span>
-        <span class="score">${fmtScore(x.s)}<small>${esc(label)}</small></span>
-      </button>`;
+    const whoBadges = state.blind ? "" :
+      x.l.contenders.map((p) => `<span class="badge">${esc(p)} ★</span>`).join("");
+    // Reuse rankRow, then splice the who-badges into the title line.
+    return rankRow(x, i, label)
+      .replace("</span>\n      <span class=\"b\">", whoBadges + "</span>\n      <span class=\"b\">");
   }).join("");
 
   root.innerHTML = `
-    <div class="rank-controls">
-      <select id="rankBy">
-        <option value="Combined" ${state.rankBy === "Combined" ? "selected" : ""}>Overall: Combined</option>
-        <option value="Jake" ${state.rankBy === "Jake" ? "selected" : ""}>Overall: Jake</option>
-        <option value="Kate" ${state.rankBy === "Kate" ? "selected" : ""}>Overall: Kate</option>
-        ${critOpts}
-      </select>
-    </div>
-    <div class="rank-list">${rows || `<div class="loading">Nothing rated yet.</div>`}</div>`;
-
-  document.getElementById("rankBy").onchange = (e) => { state.rankBy = e.target.value; renderRank(); };
-  document.querySelectorAll(".rank-row").forEach((r) => {
-    r.onclick = () => { state.current = Number(r.dataset.idx); setTab("browse"); };
-  });
+    <div class="rank-list" style="padding-top:14px">${rows ||
+      `<div class="loading">No contenders yet — tap ☆ on a house you love.</div>`}</div>`;
+  wireRankRows(root);
 }
 
 /* ============================ Tabs & boot ============================== */
 function setTab(tab) {
   state.tab = tab;
-  document.getElementById("tabBrowse").classList.toggle("active", tab === "browse");
-  document.getElementById("tabRank").classList.toggle("active", tab === "rank");
-  document.getElementById("viewBrowse").classList.toggle("hidden", tab !== "browse");
-  document.getElementById("viewRank").classList.toggle("hidden", tab !== "rank");
-  if (state.data) tab === "browse" ? renderBrowse() : renderRank();
+  const map = { browse: "viewBrowse", rank: "viewRank", cont: "viewCont" };
+  ["browse", "rank", "cont"].forEach((t) => {
+    document.getElementById("tab" + { browse: "Browse", rank: "Rank", cont: "Cont" }[t])
+      .classList.toggle("active", t === tab);
+    document.getElementById(map[t]).classList.toggle("hidden", t !== tab);
+  });
+  if (!state.data) return;
+  if (tab === "browse") renderBrowse();
+  else if (tab === "rank") renderRank();
+  else renderCont();
 }
 document.getElementById("tabBrowse").onclick = () => setTab("browse");
 document.getElementById("tabRank").onclick = () => setTab("rank");
+document.getElementById("tabCont").onclick = () => setTab("cont");
+
+/* Blind mode */
+function refreshBlindBtn() {
+  const b = document.getElementById("blindBtn");
+  b.classList.toggle("on", state.blind);
+  b.textContent = state.blind ? "Blind on" : "Blind";
+}
+document.getElementById("blindBtn").onclick = () => {
+  state.blind = !state.blind;
+  localStorage.setItem("hh_blind", state.blind ? "1" : "0");
+  refreshBlindBtn();
+  if (state.data) setTab(state.tab);
+};
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) =>
@@ -612,7 +847,7 @@ function askWho() {
       localStorage.setItem("hh_person", state.person);
       document.getElementById("whoOverlay").classList.add("hidden");
       refreshWhoBtn();
-      if (state.data && state.tab === "browse") renderBrowse();
+      if (state.data) setTab(state.tab);
     };
   });
   document.getElementById("whoOverlay").classList.remove("hidden");
@@ -627,10 +862,9 @@ async function boot() {
   log("boot — loading listings");
   try {
     const body = await apiGet("listings");
-    // Sort by price descending as the default browse order.
     body.listings.sort((a, b) => (Number(b.spec["Price"]) || 0) - (Number(a.spec["Price"]) || 0));
     state.data = body;
-    log(`loaded ${body.listings.length} listings, ${body.criteria.length} criteria`);
+    log(`loaded ${body.listings.length} listings (${body.listings.filter(l => l.manual).length} manual), ${body.criteria.length} criteria`);
     setTab(state.tab);
   } catch (e) {
     log("load failed:", e);
@@ -642,6 +876,7 @@ async function boot() {
 }
 
 refreshWhoBtn();
+refreshBlindBtn();
 if (!state.secret) askSecret();
 else boot();
 if (!state.person) askWho();
