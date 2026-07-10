@@ -266,6 +266,25 @@
     font-family: "Public Sans", sans-serif; font-weight: 600;
   }
 
+  /* ---------- Compare ---------- */
+  .cmp .selrow { display: flex; gap: 8px; margin-bottom: 10px; }
+  .cmp .selrow select {
+    flex: 1; min-width: 0; font: inherit; font-weight: 600; font-size: 13px;
+    padding: 8px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--paper); color: var(--ink);
+  }
+  .cmp table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .cmp th, .cmp td {
+    padding: 6px 8px; text-align: center; border-top: 1px solid var(--line);
+  }
+  .cmp th {
+    font-family: "Zilla Slab", serif; font-size: 14px; border-top: none;
+    max-width: 0; width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cmp td.lbl { text-align: left; color: var(--ink-soft); font-weight: 600; }
+  .cmp td.win { color: var(--sea); font-weight: 700; background: var(--sea-soft); }
+  .cmp tr.total td { font-weight: 700; border-top: 2px solid var(--line); }
+
   /* ---------- Overlays ---------- */
   .overlay {
     position: fixed; inset: 0; z-index: 100; background: rgba(34,48,60,.55);
@@ -349,10 +368,14 @@ const state = {
   person: localStorage.getItem("hh_person") || "",
   blind: localStorage.getItem("hh_blind") === "1",
   showOurs: localStorage.getItem("hh_ours") !== "0",   // default on
+  sortBy: localStorage.getItem("hh_sort") || "price-desc",
+  hideRated: localStorage.getItem("hh_hiderated") === "1",
   data: null,
   current: 0,
   tab: "browse",
   rankBy: "Combined",
+  cmpA: "",
+  cmpB: "",
 };
 
 const partnerOf = (p) => PEOPLE.find((x) => x !== p);
@@ -373,7 +396,11 @@ async function apiPost(payload) {
     body: JSON.stringify(Object.assign({ secret: state.secret }, payload)),
   });
   const body = await res.json();
-  if (!body.ok) throw new Error(body.error || "request failed");
+  if (!body.ok) {
+    const err = new Error(body.error || "request failed");
+    err.server = true;   // server rejected it — retrying won't help
+    throw err;
+  }
   return body;
 }
 
@@ -386,11 +413,52 @@ function flash(msg, isErr) {
   statusTimer = setTimeout(() => { el.className = ""; }, isErr ? 4000 : 1400);
 }
 
+/* --------------------- Save queue (offline-safe) ---------------------- */
+/* Every write goes through a persisted FIFO queue. Network failures are
+ * retried with backoff (order preserved); server rejections are dropped
+ * so one bad job can't wedge the queue. Survives reloads via localStorage. */
+const QUEUE_KEY = "hh_queue";
+let saveQueue = [];
+try { saveQueue = JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]"); } catch (_) { saveQueue = []; }
+let queueBusy = false;
+
+function persistQueue() { localStorage.setItem(QUEUE_KEY, JSON.stringify(saveQueue)); }
+
 function save(payload, label) {
-  apiPost(payload)
-    .then(() => flash(label + " saved"))
-    .catch((e) => { log("save failed:", e); flash(label + " failed — " + e.message, true); });
+  saveQueue.push({ payload: payload, label: label, tries: 0 });
+  persistQueue();
+  pumpQueue();
 }
+
+function pumpQueue() {
+  if (queueBusy || !saveQueue.length) return;
+  queueBusy = true;
+  const job = saveQueue[0];
+  apiPost(job.payload)
+    .then(() => {
+      saveQueue.shift(); persistQueue(); queueBusy = false;
+      flash(job.label + " saved" + (saveQueue.length ? ` (${saveQueue.length} pending)` : ""));
+      pumpQueue();
+    })
+    .catch((e) => {
+      queueBusy = false;
+      if (e.server) {
+        // Rejected by the backend — retrying is pointless. Drop and surface it.
+        log("save rejected, dropping:", job, e);
+        saveQueue.shift(); persistQueue();
+        flash(job.label + " rejected — " + e.message, true);
+        pumpQueue();
+        return;
+      }
+      job.tries++; persistQueue();
+      const wait = Math.min(30000, 1000 * Math.pow(2, job.tries));
+      log(`save failed (try ${job.tries}), retrying in ${wait}ms:`, e);
+      flash(`Offline — ${saveQueue.length} unsaved change${saveQueue.length > 1 ? "s" : ""}, retrying`, true);
+      setTimeout(pumpQueue, wait);
+    });
+}
+
+window.addEventListener("online", pumpQueue);
 
 /* ============================= Scoring ================================= */
 /** Weighted score using that person's OWN weights. */
@@ -421,6 +489,72 @@ function critScore(listing, crit, people) {
 }
 
 const fmtScore = (s) => (s == null ? "–" : (Math.round(s * 10) / 10).toFixed(1));
+
+/** Robust numeric parse — handles "$401,000" style strings. */
+const num = (v) => Number(String(v ?? "").replace(/[^0-9.\-]/g, "")) || 0;
+
+/* ======================== Sorting & filtering ========================== */
+function ratedCount(l, person) {
+  const r = l.ratings[person] || {};
+  return state.data.criteria.filter((c) => r[c.name] !== "" && r[c.name] != null).length;
+}
+function fullyRated(l) {
+  return state.data.criteria.length > 0 &&
+    ratedCount(l, state.person) >= state.data.criteria.length;
+}
+
+function sortListings() {
+  if (state.blind && state.sortBy === "score-combined") state.sortBy = "score-mine";
+  const price = (l) => num(l.spec["Price"]);
+  const cmps = {
+    "price-desc": (a, b) => price(b) - price(a),
+    "price-asc": (a, b) => price(a) - price(b),
+    "score-mine": (a, b) => (personScore(b, state.person) ?? -1) - (personScore(a, state.person) ?? -1),
+    "score-combined": (a, b) => (combinedScore(b) ?? -1) - (combinedScore(a) ?? -1),
+    "unrated-first": (a, b) => (ratedCount(a, state.person) - ratedCount(b, state.person)) || (price(b) - price(a)),
+  };
+  state.data.listings.sort(cmps[state.sortBy] || cmps["price-desc"]);
+}
+
+/** Listings shown in Browse, after the hide-rated filter. */
+function visibleListings() {
+  return state.hideRated
+    ? state.data.listings.filter((l) => !fullyRated(l))
+    : state.data.listings;
+}
+
+function setHideRated(on) {
+  state.hideRated = on;
+  localStorage.setItem("hh_hiderated", on ? "1" : "0");
+  state.current = 0;
+  renderBrowse();
+}
+
+const listingById = (id) =>
+  state.data.listings.find((l) => String(l.spec[KEY]) === String(id));
+
+/* ===================== Staleness & price changes ======================= */
+function daysSince(v) {
+  const t = Date.parse(v);
+  return isNaN(t) ? null : Math.floor((Date.now() - t) / 86400000);
+}
+
+/** Most recent price change for a listing, or null. Needs backend v4. */
+function priceDelta(l) {
+  const hist = (state.data.priceHistory || {})[String(l.spec[KEY])];
+  if (!hist || !hist.length) return null;
+  const last = hist[hist.length - 1];
+  const d = num(last["To"]) - num(last["From"]);
+  return d ? d : null;
+}
+
+function deltaBadge(l) {
+  const d = priceDelta(l);
+  if (!d) return "";
+  const arrow = d < 0 ? "↓" : "↑";
+  const color = d < 0 ? "var(--sea)" : "var(--bad)";
+  return ` <span class="badge" style="color:${color}" title="Price change since first captured">${arrow} ${money(Math.abs(d))}</span>`;
+}
 
 /* ============================ Photo helpers ============================ */
 function photoList(spec) {
@@ -456,18 +590,6 @@ function openLightbox(photos, at) {
   el.querySelector(".zone.right").onclick = () => stepLightbox(1);
   el.querySelector(".close").onclick = closeLightbox;
   document.addEventListener("keydown", lightboxKeys);
-  // Swipe left/right in fullscreen. A real swipe travels; a tap doesn't,
-  // so the tap zones keep working unchanged.
-  let touchX = null;
-  el.addEventListener("touchstart", (e) => {
-    touchX = e.changedTouches[0].clientX;
-  }, { passive: true });
-  el.addEventListener("touchend", (e) => {
-    if (touchX == null) return;
-    const dx = e.changedTouches[0].clientX - touchX;
-    touchX = null;
-    if (Math.abs(dx) > 40) stepLightbox(dx < 0 ? 1 : -1);
-  }, { passive: true });
   showLightbox();
 }
 
@@ -498,17 +620,24 @@ function lightboxKeys(e) {
 
 /* ============================ Browse view ============================== */
 function money(v) {
-  const n = Number(v);
-  return isNaN(n) || v === "" ? "" : "$" + n.toLocaleString("en-US");
+  const n = num(v);
+  return n ? "$" + n.toLocaleString("en-US") : "";
 }
 
 function starLabel(on) { return on ? "★ Contender" : "☆ Contender"; }
 
 function renderBrowse() {
   const root = document.getElementById("viewBrowse");
-  const L = state.data.listings;
+  if (state.blind && state.sortBy === "score-combined") state.sortBy = "score-mine";
+  const L = visibleListings();
   if (!L.length) {
-    root.innerHTML = `<div class="loading">No active listings. Favorite homes on Compass and reload.</div>`;
+    if (state.data.listings.length) {
+      root.innerHTML = `<div class="loading">Every house is fully rated.<br><br>
+        <button class="add-crit" id="clearFilter" style="max-width:240px">Show rated houses</button></div>`;
+      document.getElementById("clearFilter").onclick = () => setHideRated(false);
+    } else {
+      root.innerHTML = `<div class="loading">No active listings. Favorite homes on Compass and reload.</div>`;
+    }
     return;
   }
   state.current = Math.max(0, Math.min(state.current, L.length - 1));
@@ -543,7 +672,17 @@ function renderBrowse() {
       </div>`;
   }).join("");
 
+  const sortOpts = [
+    ["price-desc", "Price ↓"], ["price-asc", "Price ↑"],
+    ["unrated-first", "Unrated first"], ["score-mine", "My score"],
+  ].concat(state.blind ? [] : [["score-combined", "Combined score"]])
+    .map(([v, t]) => `<option value="${v}" ${state.sortBy === v ? "selected" : ""}>Sort: ${t}</option>`).join("");
+
   root.innerHTML = `
+    <div class="rank-controls">
+      <select id="sortSel">${sortOpts}</select>
+      <label class="toggle"><input type="checkbox" id="hideRatedChk" ${state.hideRated ? "checked" : ""}> Hide rated</label>
+    </div>
     <div class="listing-nav">
       <button id="prev" ${state.current === 0 ? "disabled" : ""}>‹</button>
       <select id="jump">${opts}</select>
@@ -556,9 +695,11 @@ function renderBrowse() {
           <button class="star-btn ${starred ? "on" : ""}" id="starBtn">${starLabel(starred)}</button>
         </div>
         <div class="sub">
-          <span class="price">${money(s["Price"])}</span>
-          <span>${s["Beds"]} bd · ${s["Baths"]} ba · ${Number(s["SqFt"]) ? Number(s["SqFt"]).toLocaleString() + " sqft" : ""}</span>
+          <span class="price">${money(s["Price"])}${deltaBadge(item)}</span>
+          <span>${s["Beds"]} bd · ${s["Baths"]} ba · ${num(s["SqFt"]) ? num(s["SqFt"]).toLocaleString() + " sqft" : ""}</span>
           <span>${esc(s["City"])}</span>
+          ${(() => { const d = item.manual ? null : daysSince(s["Captured"]);
+            return d != null ? `<span title="Days since first captured">${d === 0 ? "captured today" : "captured " + d + "d ago"}</span>` : ""; })()}
           ${s["Compass URL"] ? `<a href="${s["Compass URL"]}" target="_blank" rel="noopener">Compass ↗</a>` : ""}
         </div>
       </div>
@@ -594,6 +735,17 @@ function wireBrowse(item, photos) {
   document.getElementById("prev").onclick = () => { state.current--; renderBrowse(); };
   document.getElementById("next").onclick = () => { state.current++; renderBrowse(); };
   document.getElementById("jump").onchange = (e) => { state.current = Number(e.target.value); renderBrowse(); };
+
+  // Sort & filter
+  document.getElementById("sortSel").onchange = (e) => {
+    state.sortBy = e.target.value;
+    localStorage.setItem("hh_sort", state.sortBy);
+    sortListings();
+    // Keep looking at the same house after re-sorting.
+    state.current = Math.max(0, visibleListings().findIndex((l) => String(l.spec[KEY]) === id));
+    renderBrowse();
+  };
+  document.getElementById("hideRatedChk").onchange = (e) => setHideRated(e.target.checked);
 
   // Fullscreen viewer
   document.querySelectorAll("#rail img").forEach((img) => {
@@ -696,16 +848,16 @@ function rankRow(x, i, label) {
   const s = x.l.spec;
   const thumb = photoList(s)[0];
   const starred = x.l.contenders.includes(state.person);
-  const idx = state.data.listings.indexOf(x.l);
+  const id = esc(String(s[KEY]));
   return `
-    <button class="rank-row ${x.l.manual ? "ours" : ""}" data-idx="${idx}">
+    <button class="rank-row ${x.l.manual ? "ours" : ""}" data-id="${id}">
       <span class="pos">${i + 1}</span>
       ${thumb ? imgTag(thumb, "300x200") : `<img alt="">`}
       <span class="mid">
         <span class="a">${esc(s["Address"])}${x.l.manual ? `<span class="badge">Our house</span>` : ""}</span>
-        <span class="b">${money(s["Price"])} ${s["Beds"] ? `· ${s["Beds"]}bd ${s["Baths"]}ba` : ""} · ${esc(s["City"])}</span>
+        <span class="b">${money(s["Price"])}${deltaBadge(x.l)} ${s["Beds"] ? `· ${s["Beds"]}bd ${s["Baths"]}ba` : ""} · ${esc(s["City"])}</span>
       </span>
-      <span class="row-star ${starred ? "on" : ""}" data-star="${idx}" role="button" title="Contender">★</span>
+      <span class="row-star ${starred ? "on" : ""}" data-star="${id}" role="button" title="Contender">★</span>
       <span class="score">${fmtScore(x.s)}<small>${esc(label)}</small></span>
     </button>`;
 }
@@ -714,12 +866,23 @@ function wireRankRows(root) {
   root.querySelectorAll(".row-star").forEach((el) => {
     el.onclick = (e) => {
       e.stopPropagation();
-      toggleContender(state.data.listings[Number(el.dataset.star)]);
+      const l = listingById(el.dataset.star);
+      if (l) toggleContender(l);
       state.tab === "rank" ? renderRank() : renderCont();
     };
   });
   root.querySelectorAll(".rank-row").forEach((r) => {
-    r.onclick = () => { state.current = Number(r.dataset.idx); setTab("browse"); };
+    r.onclick = () => {
+      const l = listingById(r.dataset.id);
+      if (!l) return;
+      // If the hide-rated filter would hide this house, lift it quietly.
+      if (state.hideRated && fullyRated(l)) {
+        state.hideRated = false;
+        localStorage.setItem("hh_hiderated", "0");
+      }
+      state.current = Math.max(0, visibleListings().indexOf(l));
+      setTab("browse");
+    };
   });
 }
 
@@ -772,6 +935,107 @@ function renderRank() {
   wireRankRows(root);
 }
 
+/* ============================ Compare view ============================= */
+function compareHTML() {
+  const L = state.data.listings;
+  if (L.length < 2) return "";
+
+  // Defaults: A = top contender (or first listing), B = our house if possible.
+  const conts = L.filter((l) => l.contenders.length);
+  if (!state.cmpA || !listingById(state.cmpA)) {
+    state.cmpA = String((conts[0] || L[0]).spec[KEY]);
+  }
+  if (!state.cmpB || !listingById(state.cmpB) || state.cmpB === state.cmpA) {
+    const ours = L.find((l) => l.manual);
+    const alt = (ours && String(ours.spec[KEY]) !== state.cmpA)
+      ? ours
+      : conts.concat(L).find((l) => String(l.spec[KEY]) !== state.cmpA);
+    state.cmpB = String(alt.spec[KEY]);
+  }
+  const A = listingById(state.cmpA);
+  const B = listingById(state.cmpB);
+
+  const opts = (cur) => L.map((l) => {
+    const id = String(l.spec[KEY]);
+    const tag = l.manual ? " (our house)" : (l.contenders.length ? " ★" : "");
+    return `<option value="${esc(id)}" ${id === cur ? "selected" : ""}>${esc(l.spec["Address"])}${tag}</option>`;
+  }).join("");
+
+  // hi: highlight the larger numeric value as the winner.
+  const row = (label, a, b, hi, total) => {
+    let ca = "", cb = "";
+    if (hi) {
+      const na = num(a), nb = num(b);
+      if (na !== nb && (na || nb)) (na > nb) ? (ca = " win") : (cb = " win");
+    }
+    const cls = total ? ` class="total"` : "";
+    return `<tr${cls}><td class="lbl">${esc(label)}</td>
+      <td class="${ca}">${a === "" || a == null ? "–" : a}</td>
+      <td class="${cb}">${b === "" || b == null ? "–" : b}</td></tr>`;
+  };
+
+  const me = state.person, partner = partnerOf(me);
+  const specRows =
+    row("Price", money(A.spec["Price"]), money(B.spec["Price"])) +
+    row("Beds", A.spec["Beds"], B.spec["Beds"], true) +
+    row("Baths", A.spec["Baths"], B.spec["Baths"], true) +
+    row("SqFt", num(A.spec["SqFt"]) ? num(A.spec["SqFt"]).toLocaleString() : "",
+         num(B.spec["SqFt"]) ? num(B.spec["SqFt"]).toLocaleString() : "", true) +
+    row("Year Built", A.spec["Year Built"], B.spec["Year Built"]) +
+    row("City", esc(A.spec["City"]), esc(B.spec["City"]));
+
+  const ratingCell = (l, crit) => {
+    if (state.blind) {
+      const v = (l.ratings[me] || {})[crit];
+      return v === "" || v == null ? "" : String(v);
+    }
+    return PEOPLE.map((p) => {
+      const v = (l.ratings[p] || {})[crit];
+      return p[0] + ":" + (v === "" || v == null ? "–" : v);
+    }).join(" · ");
+  };
+  // For win-highlighting use the average rating across visible people.
+  const people = state.blind ? [me] : PEOPLE;
+  const critRows = state.data.criteria.map((c) => {
+    const cells = [A, B].map((l) => ratingCell(l, c.name));
+    const avgs = [A, B].map((l) => critScore(l, c.name, people));
+    let ca = "", cb = "";
+    if (avgs[0] != null || avgs[1] != null) {
+      const na = avgs[0] ?? -1, nb = avgs[1] ?? -1;
+      if (na !== nb) (na > nb) ? (ca = " win") : (cb = " win");
+    }
+    return `<tr><td class="lbl">${esc(c.name)}</td>
+      <td class="${ca}">${cells[0] || "–"}</td>
+      <td class="${cb}">${cells[1] || "–"}</td></tr>`;
+  }).join("");
+
+  let totalRows = row("My score", fmtScore(personScore(A, me)), fmtScore(personScore(B, me)), true, true);
+  if (!state.blind) {
+    totalRows += row(partner + "'s score", fmtScore(personScore(A, partner)), fmtScore(personScore(B, partner)), true, true);
+    totalRows += row("Combined", fmtScore(combinedScore(A)), fmtScore(combinedScore(B)), true, true);
+  }
+
+  return `
+    <section class="card cmp">
+      <h2>Head to head</h2>
+      <div class="selrow">
+        <select id="cmpA">${opts(state.cmpA)}</select>
+        <select id="cmpB">${opts(state.cmpB)}</select>
+      </div>
+      <table>
+        <tr><th></th><th>${esc(A.spec["Address"])}</th><th>${esc(B.spec["Address"])}</th></tr>
+        ${specRows}${critRows}${totalRows}
+      </table>
+    </section>`;
+}
+
+function wireCompare(root) {
+  ["cmpA", "cmpB"].forEach((sel) => {
+    const el = root.querySelector("#" + sel);
+    if (el) el.onchange = () => { state[sel] = el.value; renderCont(); };
+  });
+}
+
 /* =========================== Contenders view =========================== */
 function renderCont() {
   const root = document.getElementById("viewCont");
@@ -797,8 +1061,10 @@ function renderCont() {
   }).join("");
 
   root.innerHTML = `
-    <div class="rank-list" style="padding-top:14px">${rows ||
+    ${compareHTML()}
+    <div class="rank-list" style="padding-top:0">${rows ||
       `<div class="loading">No contenders yet — tap ☆ on a house you love.</div>`}</div>`;
+  wireCompare(root);
   wireRankRows(root);
 }
 
@@ -830,7 +1096,7 @@ document.getElementById("blindBtn").onclick = () => {
   state.blind = !state.blind;
   localStorage.setItem("hh_blind", state.blind ? "1" : "0");
   refreshBlindBtn();
-  if (state.data) setTab(state.tab);
+  if (state.data) { sortListings(); setTab(state.tab); }
 };
 
 function esc(s) {
@@ -874,8 +1140,8 @@ async function boot() {
   log("boot — loading listings");
   try {
     const body = await apiGet("listings");
-    body.listings.sort((a, b) => (Number(b.spec["Price"]) || 0) - (Number(a.spec["Price"]) || 0));
     state.data = body;
+    sortListings();
     log(`loaded ${body.listings.length} listings (${body.listings.filter(l => l.manual).length} manual), ${body.criteria.length} criteria`);
     setTab(state.tab);
   } catch (e) {
@@ -890,7 +1156,7 @@ async function boot() {
 refreshWhoBtn();
 refreshBlindBtn();
 if (!state.secret) askSecret();
-else boot();
+else { boot(); pumpQueue(); /* flush anything left over from last session */ }
 if (!state.person) askWho();
 </script>
 </body>
