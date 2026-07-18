@@ -512,6 +512,12 @@ function sortListings() {
     "score-mine": (a, b) => (personScore(b, state.person) ?? -1) - (personScore(a, state.person) ?? -1),
     "score-combined": (a, b) => (combinedScore(b) ?? -1) - (combinedScore(a) ?? -1),
     "unrated-first": (a, b) => (ratedCount(a, state.person) - ratedCount(b, state.person)) || (price(b) - price(a)),
+    "beds-desc": (a, b) => (num(b.spec["Beds"]) - num(a.spec["Beds"])) || (price(b) - price(a)),
+    "baths-desc": (a, b) => (num(b.spec["Baths"]) - num(a.spec["Baths"])) || (price(b) - price(a)),
+    "sqft-desc": (a, b) => num(b.spec["SqFt"]) - num(a.spec["SqFt"]),
+    "lot-desc": (a, b) => num(b.spec["Lot SqFt"]) - num(a.spec["Lot SqFt"]),
+    "ppsf-asc": (a, b) => num(a.spec["$/SqFt"]) - num(b.spec["$/SqFt"]),
+    "ppsf-desc": (a, b) => num(b.spec["$/SqFt"]) - num(a.spec["$/SqFt"]),
   };
   state.data.listings.sort(cmps[state.sortBy] || cmps["price-desc"]);
 }
@@ -674,6 +680,9 @@ function renderBrowse() {
 
   const sortOpts = [
     ["price-desc", "Price ↓"], ["price-asc", "Price ↑"],
+    ["beds-desc", "Beds ↓"], ["baths-desc", "Baths ↓"],
+    ["sqft-desc", "SqFt ↓"], ["lot-desc", "Lot SqFt ↓"],
+    ["ppsf-asc", "$/SqFt ↑"], ["ppsf-desc", "$/SqFt ↓"],
     ["unrated-first", "Unrated first"], ["score-mine", "My score"],
   ].concat(state.blind ? [] : [["score-combined", "Combined score"]])
     .map(([v, t]) => `<option value="${v}" ${state.sortBy === v ? "selected" : ""}>Sort: ${t}</option>`).join("");
